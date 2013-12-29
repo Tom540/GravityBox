@@ -28,17 +28,19 @@ import android.content.Intent;
 import android.database.ContentObserver;
 import android.os.Handler;
 import android.provider.Settings;
+import android.telephony.TelephonyManager;
 import android.view.View;
 
 public class NetworkModeTile extends BasicTile {
     private static final String TAG = "GB:NetworkModeTile";
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = true;
 
     private int mNetworkType;
     private int mDefaultNetworkType;
     private boolean mAllow3gOnly;
     private boolean mAllow2g3g;
     private boolean mAllowLte;
+    private int mPhoneType;
 
     private static void log(String message) {
         XposedBridge.log(TAG + ": " + message);
@@ -78,26 +80,30 @@ public class NetworkModeTile extends BasicTile {
                 switch (mNetworkType) {
                     case PhoneWrapper.NT_WCDMA_PREFERRED:
                     case PhoneWrapper.NT_GSM_WCDMA_AUTO:
+                    case PhoneWrapper.NT_GLOBAL:
                         i.putExtra(PhoneWrapper.EXTRA_NETWORK_TYPE, 
                                 mAllowLte ? getPreferredLteMode() : 
-                                    PhoneWrapper.NT_GSM_ONLY);
+                                    isCdmaPhone() ? PhoneWrapper.NT_CDMA : PhoneWrapper.NT_GSM_ONLY);
                         break;
                     case PhoneWrapper.NT_WCDMA_ONLY:
                         if (!mAllow2g3g) {
                             i.putExtra(PhoneWrapper.EXTRA_NETWORK_TYPE,
-                                    mAllowLte ? getPreferredLteMode() : PhoneWrapper.NT_GSM_ONLY);
+                                    mAllowLte ? getPreferredLteMode() : 
+                                        isCdmaPhone() ? PhoneWrapper.NT_CDMA : PhoneWrapper.NT_GSM_ONLY);
                         } else {
                             i.putExtra(PhoneWrapper.EXTRA_NETWORK_TYPE, PhoneWrapper.NT_WCDMA_PREFERRED);
                         }
                         break;
                     case PhoneWrapper.NT_GSM_ONLY:
+                    case PhoneWrapper.NT_CDMA:
                         i.putExtra(PhoneWrapper.EXTRA_NETWORK_TYPE, mAllow3gOnly ?
-                                    PhoneWrapper.NT_WCDMA_ONLY : PhoneWrapper.NT_WCDMA_PREFERRED);
+                                    PhoneWrapper.NT_WCDMA_ONLY : 
+                                        isCdmaPhone() ? PhoneWrapper.NT_GLOBAL : PhoneWrapper.NT_WCDMA_PREFERRED);
                         break;
                     default:
                         if (PhoneWrapper.isLteNetworkType(mNetworkType)) {
                             i.putExtra(PhoneWrapper.EXTRA_NETWORK_TYPE, 
-                                    PhoneWrapper.NT_GSM_ONLY);
+                                    isCdmaPhone() ? PhoneWrapper.NT_CDMA : PhoneWrapper.NT_GSM_ONLY);
                         } else {
                             log("onClick: Unknown or unsupported network type: mNetworkType = " + mNetworkType);
                         }
@@ -114,6 +120,10 @@ public class NetworkModeTile extends BasicTile {
         ContentResolver cr = mContext.getContentResolver();
         mNetworkType = Settings.Global.getInt(cr, 
                 PhoneWrapper.PREFERRED_NETWORK_MODE, mDefaultNetworkType);
+        TelephonyManager tm = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
+        mPhoneType = tm.getPhoneType();
+        if (DEBUG) log("Phone type=" + mPhoneType + "; mNetworkType=" + mNetworkType +
+                "; mDefaultNetworkType=" + mDefaultNetworkType);
     }
 
     @Override
@@ -176,12 +186,14 @@ public class NetworkModeTile extends BasicTile {
         switch (mNetworkType) {
             case PhoneWrapper.NT_WCDMA_PREFERRED:
             case PhoneWrapper.NT_GSM_WCDMA_AUTO:
+            case PhoneWrapper.NT_GLOBAL:
                 mDrawableId = R.drawable.ic_qs_2g3g_on;
                 break;
             case PhoneWrapper.NT_WCDMA_ONLY:
                 mDrawableId = R.drawable.ic_qs_3g_on;
                 break;
             case PhoneWrapper.NT_GSM_ONLY:
+            case PhoneWrapper.NT_CDMA:
                 mDrawableId = R.drawable.ic_qs_2g_on;
                 break;
             default:
@@ -200,5 +212,9 @@ public class NetworkModeTile extends BasicTile {
     private int getPreferredLteMode() {
         return (PhoneWrapper.isLteNetworkType(mDefaultNetworkType) ?
                         mDefaultNetworkType : PhoneWrapper.NT_LTE_CMDA_EVDO_GSM_WCDMA);
+    }
+
+    private boolean isCdmaPhone() {
+        return mPhoneType == TelephonyManager.PHONE_TYPE_CDMA;
     }
 }
